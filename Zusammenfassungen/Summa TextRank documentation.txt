@@ -1,0 +1,32 @@
+from summa.summarizer import summarize
+import os
+
+
+def summarize_text(file_name): #^1
+    with open(file_name, "r", encoding="utf8") as text:
+        texte = text.read()
+        summ = summarize(texte, ratio=0.1, language="english")
+    return summ
+
+
+def export_summary_to_txtfile(summary, filename):
+    with open(filename, "w", encoding="utf8") as file:
+        for line in summary:
+            file.write(line)
+    return
+
+#^2
+os.chdir("C:\\DATA\\NLP Testing\\medium test data, deepcodeAI\\deepcode test")
+file_name = "BAI Gesamtfile.txt"
+summary_file_name = file_name[:-4] + "_summary.txt"
+
+#1. summarize the text using the library summa
+summary = summarize_text(file_name)
+
+#2. Export the summary to a txt file
+export_summary_to_txtfile(summary, summary_file_name)
+
+Quellen:
+^1: https://medium.com/@shivangisareen/text-summarisation-with-gensim-textrank-46bbb3401289
+^2: https://github.com/summanlp/textrank
+

@@ -1,0 +1,219 @@
+from textblob_de import TextBlobDE
+import re
+from textblob import TextBlob
+import os
+import json
+from nltk.corpus import stopwords
+from nltk import wordpunct_tokenize
+import csv
+import matplotlib.pyplot as plt
+#^1
+
+def load_text(directory, filename):
+    os.chdir(directory)
+    with open(filename, "r", encoding="utf8") as file:
+        text = file.read()
+    return text
+
+
+def load_tweets(filename):
+    tweet_list = []
+    with open(filename, "r", encoding="utf8") as jason:
+        data = json.load(jason)
+        for element in data:
+            element_data = []
+            date = element["created_at"]
+            text = element["full_text"]
+            element_data.append(date)
+            element_data.append(text)
+            tweet_list.append(element_data)
+
+    return tweet_list
+
+
+def calc_lang_ratios(text):
+    #finds how many unique stopwords are existing in the text per language
+    language_amounts = {}
+    stopwords_set = None
+    single_words = wordpunct_tokenize(text)
+    words = [word.lower() for word in single_words]
+
+    for language in stopwords.fileids():
+        stops = []
+        for item in stopwords.words(language):
+            stops.extend(wordpunct_tokenize(item))
+            stopwords_set = set(stops)
+        words_set = set(words)
+        common_elements = words_set.intersection(stopwords_set)
+        language_amounts[language] = len(common_elements)
+    return language_amounts
+
+
+def find_language(text):
+    # finds the most common language
+    amount = calc_lang_ratios(text)
+    most_amount_of_language = max(amount, key=amount.get)
+    return most_amount_of_language
+
+
+def german_semantic(text):
+    from nltk.corpus import stopwords
+    from nltk.stem.cistem import Cistem
+    stopwords = set(stopwords.words("german"))
+
+    liste = []
+    stemmer = Cistem()
+    wordlist = []
+
+    # clean up the text
+    text = "".join(text.lower())
+    text = text.replace('[^\w\s]', '')
+    text = re.sub("\s+", " ", text)
+    # delete stopwords
+    for word in text.split():
+        if word not in stopwords:
+            liste.append(word)
+    text = " ".join(liste)
+    # stemmer
+    for word in text.split():
+        word = stemmer.segment(word)[0]
+        wordlist.append(word)
+    text = " ".join(wordlist)
+
+    # sentiment
+    blob = TextBlobDE(text)
+    sentiment_polarity = blob.sentiment.polarity
+    sentiment_subjectivity = blob.sentiment.subjectivity
+
+    return sentiment_polarity, sentiment_subjectivity
+
+
+def english_semantic(text):
+    from nltk.corpus import stopwords
+    from nltk.stem import PorterStemmer
+
+    # clean text
+    text = "".join(text.lower())
+    text = text.replace('[^\w\s]', '')
+    text = re.sub("\s+", " ", text)
+    # remove stopwords
+    stopword = stopwords.words("english")
+    wordlist = []
+    for word in text.split():
+        if word not in stopword:
+            wordlist.append(word)
+    text = " ".join(wordlist)
+    # stemming
+    st = PorterStemmer()
+    wordlist2 = []
+    for word in text.split():
+        new_word = st.stem(word) #^2
+        wordlist2.append(new_word)
+    text = " ".join(wordlist2)
+    # semantic
+    blob = TextBlob(text)
+    sentiment_polarity = blob.sentiment.polarity
+    sentiment_subjectivity = blob.sentiment.subjectivity
+
+    return sentiment_polarity, sentiment_subjectivity
+
+
+def initiate_semantic_analysis(text):
+    polarity = None
+    subjectivity = None
+    if find_language(text) == "german":
+        polarity, subjectivity = german_semantic(text)
+    elif find_language(text) == "english":
+        polarity, subjectivity = english_semantic(text)
+    else:
+        print("ERROR: Language couldn't be detected")
+        pass
+
+    print("Polarity: " + str(polarity))
+    print("Subjectivity: " + str(subjectivity))
+    return polarity
+
+
+# -------------Make some graphs------------------------------------
+def read_csv_to_list(filename): #^3
+    csvfile = open(filename)
+    CSV_reader = csv.reader(csvfile)
+    output_list = list(CSV_reader)
+    return output_list
+
+
+def split_in_x_and_y(polarity_liste):
+    x = []
+    y = []
+    for i in range(0, len(polarity_liste)): #^4
+        nummer = int(polarity_liste[i][0])
+        polarity = float(polarity_liste[i][1]) 
+        x.append(nummer)
+        y.append(polarity)
+    print("average: " + str(sum(y) / len(y)))
+    print(y)
+    return x, y
+
+
+def create_scatterplot(x, y, x_label, y_label, plot_name, area):
+    colors = "red"
+    plt.scatter(x, y, s=area, c=colors)
+    plt.title(plot_name)
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    plt.show()
+    return
+
+
+def execute_scatterplott_prozess(filename, x_label, y_label, plot_name, area):
+    liste_of_file = read_csv_to_list(filename)
+    X, Y = split_in_x_and_y(liste_of_file)
+    create_scatterplot(X, Y, x_label, y_label, plot_name, area)
+    print("Created Graph successfully.")
+    return
+
+
+# --------------------------------------------
+# Variables:
+txt_file_directory = "C:\\DATA\\NLP Testing\medium test data, BAI"
+#file_name = "BAI Gesamtfile.txt"
+tweets_filename = "flixflax.txt"
+filename_of_csv_file = "flixiflaxi.csv"
+# Calls:
+#text = load_text(txt_file_directory, file_name)
+#initiate_semantic_analysis(text)
+
+tweet_liste = load_tweets(tweets_filename)
+print("Zeitraum: Start: " + str(tweet_liste[0][0]) + ", Ende: " + str(tweet_liste[-1][0]))
+with open(filename_of_csv_file, "w", encoding="utf8", newline="") as csvfile: #^5
+    csvwriter = csv.writer(csvfile)
+    for i in range(0, len(tweet_liste)):
+        polarity = None
+        text = tweet_liste[i][1]
+        date = tweet_liste[i][0]
+        print(text)
+        try:
+            polarity = initiate_semantic_analysis(text)
+        except Exception as ex:
+            print("Error: " + str(ex))
+            pass
+        if polarity:
+            polaritylist = [i]
+            polaritylist.append(polarity)
+            csvwriter.writerow(polaritylist)
+# .------------------- Create scatter plot:
+# Variables:
+plot_name = "Cool Plot"
+plot_x_achses = "X"
+plot_y_achses = "Y"
+plot_area = 40
+
+#Calls:
+execute_scatterplott_prozess(filename_of_csv_file, plot_x_achses, plot_y_achses, plot_name, plot_area)
+
+Quellen:
+^1: https://textblob.readthedocs.io/en/dev/quickstart.html#sentiment-analysis
+^2: https://www.nltk.org/api/nltk.stem.html
+^3: https://pythonspot.com/matplotlib-scatterplot/
+^4: https://stackoverflow.com/questions/4703390/how-to-extract-a-floating-number-from-a-string
+^5: https://stackoverflow.com/questions/3348460/csv-file-written-with-python-has-blank-lines-between-each-row

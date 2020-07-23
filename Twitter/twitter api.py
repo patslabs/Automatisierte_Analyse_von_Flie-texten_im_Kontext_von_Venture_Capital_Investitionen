@@ -1,0 +1,77 @@
+import tweepy
+import json
+
+def connect_to_api(ACCESS_TOKEN, ACCESS_SECRET, CONSUMER_KEY, CONSUMER_SECRET):
+    auth = tweepy.OAuthHandler(CONSUMER_KEY, CONSUMER_SECRET)
+    auth.set_access_token(ACCESS_TOKEN, ACCESS_SECRET)
+    api = tweepy.API(auth, wait_on_rate_limit=True, wait_on_rate_limit_notify=True, compression=True)
+    return api
+
+
+def stream_listening(api):
+    class StreamListener(tweepy.StreamListener):
+        def on_status(self, status):
+            print(status.text)
+
+        def on_error(self, status_code):
+            if status_code == 420:
+                return False
+
+    stream_listener = StreamListener()
+    stream = tweepy.Stream(auth=api.auth, listener=stream_listener)
+    stream.filter(track=["google"], languages=["en"])
+    # This is a streamer that prints out all messages related to the twitter id of follow
+    stream.filter(follow=["19103481"])
+    return
+
+
+def get_and_save_tweets(api, search, filename, amount_of_tweets):
+    tweets = []
+    for item in tweepy.Cursor(api.search, q=search, tweet_mode='extended').items(amount_of_tweets):
+        print(type(item._json))
+        tweets.append(item._json)
+
+    with open(filename, "w", encoding="utf8") as jason:
+            json.dump(tweets, jason)
+
+    print("Tweets have been saved succesfully.")
+    return
+
+
+def open_local_tweet_data(filename, param1=None, param2=None, param3=None):
+    with open(filename, "r", encoding="utf8") as jason:
+        data = json.load(jason)
+        for p in data:
+            print(p)
+            if param1:
+                print("Results for " + param1 + ": ")
+                print(p[param1])
+            if param2:
+                print("Results for " + param2 + ": ")
+                print(p[param2])
+            if param3:
+                print("Results for " + param3 + ": ")
+                print(p[param3])
+            print("\n")
+    return
+
+# -----------------------------------------------------------
+# Variables:
+ACCESS_TOKEN = '1061950979896074240-wNbuFEmTosQR0XDlypOvypd3mruhsL'
+ACCESS_SECRET = 'qtbQP89hYYTvEAwvD5JvqTzkS2XkCMvjNiwkKiVrmX6BJ'
+CONSUMER_KEY = 'FFmVcHmliCOySEWxtAuy0EG4B'
+CONSUMER_SECRET = '55OYMUkgtHNxjQ1ZgEIAfa2Iw3wXLMfkp0kl3pqZ6yXxCaiAiQ'
+search = "SEARCH_WORD"
+filename = "NAME.txt"
+amount_of_tweets = 500
+# Optional, up to three extra parameters can be passed to the reading tool which will point out the specific atributes.
+parameter1 = "full_text"
+parameter2 = "created_at"
+parameter3 = "" # Have a look at the example Tweet in Anlage 4 and add any parameter you want to call.
+
+# Calls:
+api = connect_to_api(ACCESS_TOKEN, ACCESS_SECRET, CONSUMER_KEY, CONSUMER_SECRET)
+get_and_save_tweets(api, search, filename, amount_of_tweets)
+open_local_tweet_data(filename, parameter1, parameter2)
+
+# stream_listening(api)

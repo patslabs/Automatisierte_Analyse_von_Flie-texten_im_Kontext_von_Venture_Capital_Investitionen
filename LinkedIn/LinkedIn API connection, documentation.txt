@@ -1,0 +1,58 @@
+import requests
+from selenium import webdriver
+import time
+
+#Arbeitsablauf
+#1. get authorization #^1
+def auth_request(client_id, redirect_uri, ):
+    token_url = "https://www.linkedin.com/oauth/v2/authorization?" + "response_type=code" + "&client_id=" + client_id + "&redirect_uri=" + redirect_uri #^2
+    driver = webdriver.Firefox() #^3
+    print(token_url)
+    driver.get(token_url)
+    while not driver.current_url.startswith("https://patlab.co"):
+        time.sleep(1)
+    url_code = driver.current_url #^4
+    #can be done nicer with a regex
+    solo_code = url_code[24:len(url_code)] #^5
+    return solo_code
+
+#2. post request #^6
+def app_request(code, client_id, client_secret, redirect_uri):
+    application_parameters = {"grant_type" : "authorization_code", "code": code,"client_id": client_id, "client_secret": client_secret, "redirect_uri": redirect_uri} #^7
+    application_url= "https://www.linkedin.com/oauth/v2/accessToken"
+    application_request = requests.post(application_url, data=application_parameters)
+    returned_data = application_request.text
+    print(returned_data)
+    return returned_data
+
+#3. make get requests to the api #^8
+def api_get(access_token):
+    permission_url = "https://api.linkedin.com/v1/people/~:(first-name)"
+    header = {"Authorization": "Bearer " + access_token} #^9
+    api_draw = requests.get(permission_url, headers=header)
+    api_draw_result = api_draw.text
+    print(api_draw_result)
+    return
+
+
+#sign up at the web browser for the access
+code = auth_request("86kzeq0vfvmq7l","https://patlab.co")
+print("Code is:" + code)
+#confirm your permission to LinkedIn
+token = app_request(code, "86kzeq0vfvmq7l", "mWGEDeFT4gH7Xnow", "https://patlab.co")[17:-23]
+print("Token is:" + token)
+#Make the request for data at LinkedIn
+api_get(token)
+
+Quellen:
+^1: https://docs.microsoft.com/en-us/linkedin/shared/authentication/authentication?context=linkedin/consumer/context
+^2: https://medium.com/@ellesmuse/how-to-get-a-linkedin-access-token-a53f9b62f0ce
+^3: https://github.com/mozilla/geckodriver/releases/tag/v0.24.0
+^4: https://stackoverflow.com/questions/30479290/get-current-url-from-browser-using-python
+^5: https://www.pythoncentral.io/cutting-and-slicing-strings-in-python/
+^6: https://stackoverflow.com/questions/11322430/how-to-send-post-request
+^7: https://stackoverflow.com/questions/19069701/python-requests-library-how-to-pass-authorization-header-with-single-token
+^8: https://stackoverflow.com/questions/29931671/making-an-api-call-in-python-with-an-api-that-requires-a-bearer-token
+^9: https://swagger.io/docs/specification/authentication/bearer-authentication/
+
+

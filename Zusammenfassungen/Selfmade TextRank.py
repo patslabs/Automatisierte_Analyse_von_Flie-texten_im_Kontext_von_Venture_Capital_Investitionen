@@ -1,0 +1,194 @@
+import numpy as np
+import pandas as pd
+import nltk
+#nltk.download('punkt') # only do it once
+import os
+import re
+from nltk.corpus import stopwords
+from nltk import wordpunct_tokenize
+from sklearn.metrics.pairwise import cosine_similarity
+import csv
+import networkx as nx
+
+#Variables for the function "split_into_sentences"
+alphabets= "([A-Za-z])"
+prefixes = "(Mr|St|Mrs|Ms|Dr)[.]"
+suffixes = "(Inc|Ltd|Jr|Sr|Co)"
+starters = "(Mr|Mrs|Ms|Dr|He\s|She\s|It\s|They\s|Their\s|Our\s|We\s|But\s|However\s|That\s|This\s|Wherever)"
+acronyms = "([A-Z][.][A-Z][.](?:[A-Z][.])?)"
+websites = "[.](com|net|org|io|gov)"
+
+
+def split_into_sentences(text):
+    #split a text in sentences with all exceptions included (hopefully)
+    text = " " + text + "  "
+    text = text.replace("\n"," ")
+    text = re.sub(prefixes,"\\1<prd>",text)
+    text = re.sub(websites,"<prd>\\1",text)
+    if "Ph.D" in text: text = text.replace("Ph.D.","Ph<prd>D<prd>")
+    text = re.sub("\s" + alphabets + "[.] "," \\1<prd> ",text)
+    text = re.sub(acronyms+" "+starters,"\\1<stop> \\2",text)
+    text = re.sub(alphabets + "[.]" + alphabets + "[.]" + alphabets + "[.]","\\1<prd>\\2<prd>\\3<prd>",text)
+    text = re.sub(alphabets + "[.]" + alphabets + "[.]","\\1<prd>\\2<prd>",text)
+    text = re.sub(" "+suffixes+"[.] "+starters," \\1<stop> \\2",text)
+    text = re.sub(" "+suffixes+"[.]"," \\1<prd>",text)
+    text = re.sub(" " + alphabets + "[.]"," \\1<prd>",text)
+    if "”" in text: text = text.replace(".”","”.")
+    if "\"" in text: text = text.replace(".\"","\".")
+    if "!" in text: text = text.replace("!\"","\"!")
+    if "?" in text: text = text.replace("?\"","\"?")
+    text = text.replace(".",".<stop>")
+    text = text.replace("?","?<stop>")
+    text = text.replace("!","!<stop>")
+    text = text.replace("<prd>",".")
+    sentences = text.split("<stop>")
+    sentences = sentences[:-1]
+    sentences = [s.strip() for s in sentences]
+    return sentences
+
+
+def calc_lang_ratios(text):
+    #finds how many unique stopwords are existing in the text per language
+    language_amounts = {}
+    single_words = wordpunct_tokenize(text)
+    words = [word.lower() for word in single_words]
+
+    for language in stopwords.fileids():
+        stops = []
+        for item in stopwords.words(language):
+            stops.extend(wordpunct_tokenize(item))
+            stopwords_set = set(stops)
+        words_set = set(words)
+        common_elements = words_set.intersection(stopwords_set)
+        language_amounts[language] = len(common_elements)
+    return language_amounts
+
+
+def find_language(text):
+    #finds the most common language
+    amount = calc_lang_ratios(text)
+    most_amount_of_language = max(amount, key=amount.get)
+    return most_amount_of_language
+
+
+def remove_stopwords(sen, stop_words):
+    sen_new = " ".join([i for i in sen if i not in stop_words])
+    return sen_new
+
+
+def preprocess_text(filename):
+    with open(filename, "r", encoding="utf8") as testtextfile:
+        testtext = testtextfile.read()
+        testtext = re.sub("TITLE:", " ", testtext)
+        testtext = re.sub("TEXT:", ".", testtext)
+        sentences = split_into_sentences(testtext)
+
+    # remove punctuations, numbers and special characters
+    clean_sentences = pd.Series(sentences).str.replace("[^a-zA-Z]", " ")
+
+    # make alphabets lowercase
+    clean_sentences = [s.lower() for s in clean_sentences]
+
+    #find right language and get the stopwords
+    stop_words = stopwords.words(find_language(testtext))
+
+    #remove stopwords
+    clean_sentences = [remove_stopwords(r.split(), stop_words) for r in clean_sentences]
+
+    return clean_sentences, sentences
+
+
+def extract_word_vectors(path):
+    # Extract word vectors from a given library
+    word_embeddings = {}
+
+    with open(path, encoding='utf-8') as f:
+            #Get the glove file before, from the downloaded zip
+        for line in f:
+            values = line.split()
+            word = values[0]
+            coefs = np.asarray(values[1:], dtype='float32')
+            word_embeddings[word] = coefs
+    return word_embeddings
+
+
+def rank_sentences(sentences, clean_sentences, word_embeddings):
+    #create sentence vectors
+    sentence_vectors = []
+    for i in clean_sentences:
+      if len(i) != 0:
+          #Create the sum of all vectors of the words that are in the sentence, if word not in database make it a 0 vector. Divide the sum by the amount of words.
+        v = sum([word_embeddings.get(w, np.zeros((100,))) for w in i.split()])/(len(i.split())+0.001)
+      else:
+        v = np.zeros((100,))
+      sentence_vectors.append(v)
+
+    # similarity matrix
+    sim_mat = np.zeros([len(sentences), len(sentences)])
+    for i in range(len(sentences)):
+      for j in range(len(sentences)):
+        if i != j:
+          sim_mat[i][j] = cosine_similarity(sentence_vectors[i].reshape(1, 100), sentence_vectors[j].reshape(1, 100))[0, 0]
+
+    #Apply pagerank algorithm
+    nx_graph = nx.from_numpy_array(sim_mat)
+    scores = nx.pagerank(nx_graph)
+
+    #sort for highest score
+    ranked_sentences = sorted(((scores[i],s) for i,s in enumerate(sentences)), reverse=True)
+    return ranked_sentences
+
+
+def export_raw_sentence_values_to_csv(ranked_sentences, filename):
+    values = []
+    for i in range(len(ranked_sentences)):
+        values.append(ranked_sentences[i][0])
+    with open(filename, "w", encoding="utf8", newline="") as newWriterFile:
+        csvWriter = csv.writer(newWriterFile, delimiter=",")
+        for item in values:
+            csvWriter.writerow([item])
+
+    #print(ranked_sentences[0])
+    #print(ranked_sentences[26])
+    return
+
+
+def create_summary(ranked_sentences, summary_length):
+    summary_list = []
+    for i in range(summary_length):
+        summary_list.append(ranked_sentences[i][1])
+    whole_text = " ".join(summary_list)
+    return whole_text
+
+
+def export_summary_to_txtfile(summary, filename):
+    with open(filename, "w", encoding="utf8") as file:
+        for line in summary:
+            file.write(line)
+    return
+
+# -------------------------------------------------------
+# Variables:
+filename = "TEXT_FILE_NAME.txt"
+os.chdir("C:\\DATA\\NLP Testing\\medium test data, deepcodeAI\\deepcode test") #Has to be done with double backslashes in the path
+path_for_vector_file = "C:\\DATA\\NLP Testing\\glove.6B.100d.txt"
+summary_length_in_sentences = 3
+summary_filename = filename[:-4] + "_summary.txt"
+
+# 1. Preprocess sentences, return sentences and clean_sentences
+clean_sentences, sentences = preprocess_text(filename)
+
+# 2. Make the word vectors
+word_embedings = extract_word_vectors(path_for_vector_file)
+
+# 3. Rank sentences
+ranked_sentences = rank_sentences(sentences, clean_sentences, word_embedings)
+
+# 4. Find the highest ranked ones
+summary_text = create_summary(ranked_sentences, summary_length_in_sentences)
+
+# 5.Export summarytext to txt file
+export_summary_to_txtfile(summary_text, summary_filename)
+
+# Additional funcitons:
+# export_raw_sentence_values_to_csv(ranked_sentences, "datafile.csv")
